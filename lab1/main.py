@@ -1,11 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import math as mt
 import numpy as np
 from bs4 import BeautifulSoup as bs
 import requests
 import os.path
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
 
 URL = 'https://www.worldometers.info/world-population/ukraine-population/'
 RAW_FILENAME = 'data.csv'
@@ -135,32 +138,21 @@ def clean_table(filename, output_filename):
     return
 
 
-def plot_stuff(filename):
-    df = pd.read_csv(filename, encoding='utf-8', index_col=0)
-
-    for col in df.columns:
-        plt.figure(figsize=(15, 6))
-        plt.plot(df[col])
-        plt.title(col)
-        plt.xlabel('Year')
-        plt.ylabel(col)
-        plt.xticks(rotation=30, ha='right')
-        plt.grid(True)
-        #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
-        plt.show()
+def plot_stuff(col, col_name):
+    plt.figure(figsize=(15, 6))
+    plt.plot(col)
+    plt.title(col_name)
+    plt.xlabel('Year')
+    plt.ylabel(col_name)
+    plt.xticks(rotation=30, ha='right')
+    plt.grid(True)
+    #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    plt.show()
 
     return
 
 
-def stats(filename, chosen_col):
-    df = pd.read_csv(filename, encoding='utf-8', index_col=0)
-
-    #print(df[chosen_col].describe())
-
-    col = df[chosen_col].tolist()
-    print(col)
-    print()
-
+def stats(col):
     mean_col = round(np.mean(col), 4)
     med_col = round(np.median(col), 4)
     var_col = round(np.var(col), 4)
@@ -173,21 +165,70 @@ def stats(filename, chosen_col):
     print(f'Variance = {var_col}')
     print(f'Standard deviation = {std_col}')
     print(f'Sqrt = {sqrt_col}')
-
-    plt.hist(col)
-    plt.grid(True)
-    plt.title(f'Histogram of {chosen_col}')
-    plt.show()
-
     return
 
 
-'''
-Закон зміни похибки – експонентційний, нормальний;
-Закон зміни досліджуваного процесу (тренду) – лінійний, квадратичний.
-Комбінаторика похибка / тренд – довільна.
-Реальні дані – 3 показники.
-'''
+def show_hist(col, col_name):
+    plt.hist(col, density=True, edgecolor='black')
+    plt.grid(True)
+    plt.title(f'Histogram of {col_name}')
+    plt.show()
+    return
+
+
+def arima_params(col):
+    plot_acf(col)
+    plot_pacf(col)
+    plt.show()
+    return
+
+
+def check_stationarity(col):
+    result = adfuller(col.values)
+
+    print('ADF Statistic: %f' % result[0])
+    print('p-value: %f' % result[1])
+    print('Critical Values:')
+    for key, value in result[4].items():
+        print('\t%s: %.3f' % (key, value))
+
+    if (result[1] <= 0.05) & (result[4]['5%'] > result[0]):
+        print("Stationary\n")
+        return True
+    else:
+        print("Non-stationary\n")
+        return False
+
+
+def arima_forecast(col, col_name):
+    is_stat = check_stationarity(col)
+    arima_params(col)
+    if not is_stat:
+        col2 = col.diff().fillna(0)
+        is_stat = check_stationarity(col2)
+        col = col2
+        plot_stuff(col, col_name)
+        show_hist(col.to_list(), col_name)
+        arima_params(col)
+
+    p, d, q = int(input("p = ")), int(input("d = ")), int(input("q = "))
+    step = 10
+    n = len(col)
+
+    model = ARIMA(col, order=(p, d, q))
+    model_fit = model.fit()
+    pred = model_fit.predict(start=n-1, end=n+step)
+
+    plt.figure(figsize=(15, 6))
+    plt.plot(col.to_list(), label='Actual data')
+    plt.plot(pred, color='red', label='Forecasted data')
+    plt.title(f'ARIMA forecast {col_name}')
+    plt.ylabel(col_name)
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    return
 
 
 if __name__ == '__main__':
@@ -209,6 +250,24 @@ if __name__ == '__main__':
         print('---------------------------------------------------')
         print()
 
-    #plot_stuff(CLEAN_FILENAME)
+    df = pd.read_csv(CLEAN_FILENAME, encoding='utf-8', index_col=0)
 
-    stats(CLEAN_FILENAME, 'Population')
+    #end_loop = len(COLUMNS)-1
+    end_loop = 2
+    for col in COLUMNS[1:end_loop]:
+        print(f'--------------------------{col}---------------------------')
+        selected_col_year = df[col].copy()
+
+        plot_stuff(selected_col_year, col)
+
+        selected_col = selected_col_year.to_list()
+
+        show_hist(selected_col, col)
+
+        stats(selected_col)
+        print()
+
+        arima_forecast(selected_col_year, col)
+
+        print('-----------------------------------------------------')
+        print()
