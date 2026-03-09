@@ -206,10 +206,9 @@ def arima_forecast(col, col_name):
     if not is_stat:
         col2 = col.diff().fillna(0)
         is_stat = check_stationarity(col2)
-        col = col2
-        plot_stuff(col, col_name)
-        show_hist(col.to_list(), col_name)
-        arima_params(col)
+        plot_stuff(col2, col_name)
+        show_hist(col2.to_list(), col_name)
+        arima_params(col2)
 
     p, d, q = int(input("p = ")), int(input("d = ")), int(input("q = "))
     step = 10
