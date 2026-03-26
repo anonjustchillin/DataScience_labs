@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math as mt
 import numpy as np
+import re
 from bs4 import BeautifulSoup as bs
 import requests
 import os.path
@@ -15,6 +16,9 @@ RAW_FILENAME = 'data_raw.csv'
 CLEAN_FILENAME = 'data_cleaned.csv'
 PROJECT_PATH = 'D:\\uni\\3курс\Data_Science\Data_science_labs\lab2'
 
+START_DATE = 1901
+SKIPPED_DATES = [2011, 2012, 2013]
+
 HEADER = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.75 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest"
@@ -27,19 +31,44 @@ def view_site(url):
     print(soup)
     return
 
-# parse site
-def parse_site(url, filename):
+# view script
+def view_script(url):
     r = requests.get(url)
     soup = bs(r.content, 'html.parser')
-    print(soup)
+    info = soup.find_all('script')
+    print(info)
+    return
 
-    info = soup.find('table', class_='datatable')
+# parse site
+def parse_site(url, filename='textfile.csv'):
+    r = requests.get(url)
+    soup = bs(r.content, 'html.parser')
 
+    info = soup.find_all('script')
+    required_info = re.search(r'const data = \[(.*?)\]', str(info), flags=re.S).group(1)
+    #print(required_info)
+
+    str_len = len(required_info)
+    #print(f'str_len = {str_len}')
+
+    curr_date = START_DATE
     with open(filename, "w", encoding='utf-8') as output_file:
-        for i in info:
-            print(i.text)
-            output_file.write(i.text)
-            output_file.write('\n')
+        output_file.write(str(curr_date))
+        output_file.write(",")
+        for i in range(str_len):
+            curr_line = required_info[i]
+            if curr_line == "\n" or curr_line == " ":
+                continue
+            elif curr_line == ",":
+                output_file.write('\n')
+                if i < str_len - 10:
+                    curr_date += 1
+                    while curr_date in SKIPPED_DATES:
+                        curr_date += 1
+                    output_file.write(str(curr_date))
+                    output_file.write(",")
+            else:
+                output_file.write(curr_line)
 
     return
 
@@ -69,3 +98,5 @@ if __name__ == '__main__':
 
     DATA_PATH = os.path.join(PROJECT_PATH, RAW_FILENAME)
     CLEANED_PATH = os.path.join(PROJECT_PATH, CLEAN_FILENAME)
+
+    view_script(URL)
