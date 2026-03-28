@@ -2,14 +2,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math as mt
 import numpy as np
+from scipy.optimize import curve_fit
+from scipy.optimize import least_squares
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error
 import re
 from bs4 import BeautifulSoup as bs
 import requests
 import os.path
-from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-
 
 URL = 'https://www.worldometers.info/water/'
 RAW_FILENAME = 'data_raw.csv'
@@ -229,7 +231,106 @@ def check_stationarity(filename, skip_last_values=False, start_idx=0, end_idx=-4
 
 
 # MNK
-def analyze_MNK(df, interval = 0.5):
+def analyze_LSM(filename, interval = 0.5):
+    df = pd.read_csv(filename, encoding='utf-8', index_col=0)
+    orig_len = len(df)
+
+    def plot_reg(x, y_real, y_pred, title, predictions=False):
+        plt.figure(figsize=(15, 6))
+        if predictions:
+            plt.vlines(x=[orig_len], ymin=0, ymax=y_pred[-1], color='red', linestyle='--')
+            plt.plot(x[0:orig_len], y_real, color='blue')
+            plt.plot(x[orig_len:], y_pred, color='red')
+        else:
+            plt.scatter(x, y_real, color='blue')
+            plt.plot(x, y_pred, color='red')
+        plt.title(title)
+        plt.xlabel('X')
+        plt.ylabel('y')
+        plt.grid(True)
+
+        plt.show()
+
+
+    def view_score(y_real, y_pred, title):
+        print(title)
+        mae = mean_absolute_error(y_real, y_pred)
+        rmse = root_mean_squared_error(y_real, y_pred)
+        r2 = r2_score(y_real, y_pred)
+        print(f'MAE: {mae}')
+        print(f'RMSE: {rmse}')
+        print(f'R2: {r2}')
+
+
+    #x_data = df.index.to_list()
+    x_data = np.arange(0, len(df), 1)
+    y_data = df[COL_NAME].to_list()
+
+    #print(len(x_data))
+    #print(len(y_data))
+
+    ########################### split data (70/30)
+    split_idx = int(len(df) - (len(df)*30/100))
+    #print(split_idx)
+    train_X = np.array(x_data[0:split_idx]).reshape(-1, 1)
+    train_Y = np.array(y_data[0:split_idx]).reshape(-1, 1)
+    test_x = np.array(x_data[split_idx:]).reshape(-1, 1)
+    test_y = np.array(y_data[split_idx:]).reshape(-1, 1)
+
+    ####################### lin reg
+    model_lin = LinearRegression()
+    model_lin.fit(train_X, train_Y)
+
+    Y_pred_lin = model_lin.predict(train_X)
+    y_pred_lin = model_lin.predict(test_x)
+
+    view_score(test_y, y_pred_lin, 'Linear Regression')
+
+    plot_reg(x_data, y_data, np.concatenate((Y_pred_lin,y_pred_lin)), 'Linear Regression')
+    plot_reg(test_x, test_y, y_pred_lin, 'Linear Regression')
+
+    print(PRINT_SEP)
+
+    ####################### poly LSM
+    poly = PolynomialFeatures(degree=2, interaction_only=False, include_bias=True)
+    train_X_lsm = poly.fit_transform(train_X)
+    test_x_lsm = poly.transform(test_x)
+    w = np.linalg.lstsq(train_X_lsm, train_Y, rcond=None)
+    #print(w)
+
+    Y_pred_lsm = np.dot(train_X_lsm, w[0])
+    y_pred_lsm = np.dot(test_x_lsm, w[0])
+
+    #print(w[0])
+    #print(y_pred_lsm)
+
+    view_score(test_y, y_pred_lsm, 'LSM Polynomial (order=2) Regression')
+
+    plot_reg(x_data, y_data, np.concatenate((Y_pred_lsm, y_pred_lsm)), 'LSM Polynomial (order=2) Regression')
+    plot_reg(test_x, test_y, y_pred_lsm, 'LSM Polynomial (order=2) Regression')
+
+    print(PRINT_SEP)
+
+    ############ FORECAST :D
+    half_idx = int(len(df)*interval)
+    new_x_data = np.arange(len(df), len(df)+half_idx+1, 1)
+    prep_new_x_data = np.array(new_x_data).reshape(-1, 1)
+
+    whole_x_data = np.concatenate((x_data, new_x_data))
+
+    # lin reg
+    new_y_pred_lin = model_lin.predict(prep_new_x_data)
+    list_new_y_pred_lin = list(new_y_pred_lin.ravel())
+
+    plot_reg(whole_x_data, y_data, list_new_y_pred_lin, 'Linear Regression Forecasting', True)
+
+    # lsm poly
+    new_x_lsm = poly.transform(prep_new_x_data)
+    new_y_pred_lsm = np.dot(new_x_lsm, w[0])
+    list_new_y_pred_lsm = list(new_y_pred_lsm.ravel())
+
+    plot_reg(whole_x_data, y_data, list_new_y_pred_lsm, 'LSM Polynomial (order=2) Forecasting', True)
+
     return
 
 
@@ -262,9 +363,8 @@ if __name__ == '__main__':
     if not os.path.isfile(CLEANED_PATH):
         clean_df(DATA_PATH)
 
-    #plot_stuff(CLEANED_PATH)
-    #show_hist(CLEANED_PATH)
-    #view_stats(CLEANED_PATH)
+    #output_stats_graph(filename=CLEANED_NONA_PATH)
     #print(PRINT_SEP)
     #check_stationarity(CLEANED_PATH, True)
-    fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
+    #fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
+    analyze_LSM(CLEANED_NONA_PATH)
