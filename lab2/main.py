@@ -145,10 +145,6 @@ def fill_empty_cells(filename, output_filename=CLEAN_NONA_FILENAME, view_options
     return
 
 
-def kalman_filter():
-    return
-
-
 def plot_stuff(col, col_name=COL_NAME, show_end=False):
     start_date = START_DATE
     end_date = END_DATE
@@ -335,7 +331,102 @@ def analyze_LSM(filename, interval = 0.5):
 
 
 # smoothing
-def smoothing(df):
+class Sample:
+    def __init__(self, x, v, t):
+        self.location = x
+        self.velocity = v
+        self.time = t
+
+    def __repr__(self):
+        return f"Sample({self.location}, {self.velocity}, {self.time})"
+
+
+class AlphaBetaGammaFilter:
+    def __init__(self, init_sample, alpha=1.0, beta=0.1, gamma=0, velocity=1.0, acceleration=0):
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.velocity_list = [init_sample.velocity]
+        self.acceleration_list = [acceleration]
+        self.sample_list = [init_sample]
+        self.locations = [init_sample.location]
+        self.errors = []
+        self.predictions = []
+
+    @property
+    def last_sample(self):
+        return self.sample_list[-1]
+
+    @property
+    def last_velocity(self):
+        return self.velocity_list[-1]
+
+    @property
+    def last_acceleration(self):
+        return self.acceleration_list[-1]
+
+    def add_sample(self, s: Sample):
+        delta_t = s.time - self.last_sample.time
+        expected_location, expected_velocity = self.predict(delta_t)
+
+        error = s.location - expected_location
+        location = expected_location + self.alpha * error
+        v = self.last_velocity + (self.beta / delta_t) * error
+        a = self.last_acceleration + (self.gamma * (error / delta_t**2))
+
+        # for debugging and results
+        self.velocity_list.append(v)
+        self.acceleration_list.append(a)
+        self.locations.append(location)
+        self.sample_list.append(s)
+        self.errors.append(error)
+
+    def predict(self, t):
+        # x+(t*v)
+        prediction = self.last_sample.location + (t * self.last_velocity)
+        # v+(t*a)
+        prediction_v = self.last_sample.velocity + (t * self.last_acceleration)
+
+        # for debugging and results
+        self.predictions.append(prediction)
+        return prediction, prediction_v
+
+
+def smoothing(filename):
+    df = pd.read_csv(filename, encoding='utf-8', index_col=0)
+    x_data = np.arange(0, len(df), 1)
+    y_data = df[COL_NAME].to_list()
+
+    def plot_smooth(x, y_real, y_pred, title):
+        plt.figure(figsize=(15, 6))
+        plt.plot(x, y_real, color='blue', alpha=0.5, label='actual data')
+        plt.plot(x, y_pred, color='red', label='smoothed data')
+        plt.title(title)
+        plt.xlabel('X')
+        plt.ylabel('y')
+        plt.legend()
+        plt.grid(True)
+
+        plt.show()
+
+    # alpha-beta
+    samples = []
+    for i in range(len(df)):
+        x = x_data[i]
+        y = y_data[i]
+        samples.append(Sample(y, x))
+
+    filter = AlphaBetaGammaFilter(samples[0], alpha=0.5, beta=0.1, velocity=1.0) # results change with beta
+    for sample in samples[1:]:
+        filter.add_sample(sample)
+
+    y_pred = filter.predictions
+    y_pred.insert(0, y_data[0])
+    plot_smooth(x_data, y_data, y_pred, 'AlphaBeta Filter')
+
+    # alpha-beta-gamma
+
+
     return
 
 
@@ -367,4 +458,5 @@ if __name__ == '__main__':
     #print(PRINT_SEP)
     #check_stationarity(CLEANED_PATH, True)
     #fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
-    analyze_LSM(CLEANED_NONA_PATH)
+    #analyze_LSM(CLEANED_NONA_PATH)
+    smoothing(CLEANED_NONA_PATH)
