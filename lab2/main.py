@@ -332,7 +332,7 @@ def analyze_LSM(filename, interval = 0.5):
 
 # smoothing
 class Sample:
-    def __init__(self, x, v, t):
+    def __init__(self, x, t, v):
         self.location = x
         self.velocity = v
         self.time = t
@@ -342,11 +342,11 @@ class Sample:
 
 
 class AlphaBetaGammaFilter:
-    def __init__(self, init_sample, alpha=1.0, beta=0.1, gamma=0, velocity=1.0, acceleration=0):
+    def __init__(self, init_sample, alpha=1.0, beta=0.1, gamma=0.0, velocity=1.0, acceleration=0):
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.velocity_list = [init_sample.velocity]
+        self.velocity_list = [velocity]
         self.acceleration_list = [acceleration]
         self.sample_list = [init_sample]
         self.locations = [init_sample.location]
@@ -371,7 +371,7 @@ class AlphaBetaGammaFilter:
 
         error = s.location - expected_location
         location = expected_location + self.alpha * error
-        v = self.last_velocity + (self.beta / delta_t) * error
+        v = expected_velocity + (self.beta / delta_t) * error
         a = self.last_acceleration + (self.gamma * (error / delta_t**2))
 
         # for debugging and results
@@ -385,14 +385,14 @@ class AlphaBetaGammaFilter:
         # x+(t*v)
         prediction = self.last_sample.location + (t * self.last_velocity)
         # v+(t*a)
-        prediction_v = self.last_sample.velocity + (t * self.last_acceleration)
+        prediction_v = self.last_velocity + (t * self.last_acceleration)
 
         # for debugging and results
         self.predictions.append(prediction)
         return prediction, prediction_v
 
 
-def smoothing(filename):
+def smoothing(filename, alpha, beta, vel, gamma=0, acc=0):
     df = pd.read_csv(filename, encoding='utf-8', index_col=0)
     x_data = np.arange(0, len(df), 1)
     y_data = df[COL_NAME].to_list()
@@ -409,23 +409,32 @@ def smoothing(filename):
 
         plt.show()
 
-    # alpha-beta
     samples = []
     for i in range(len(df)):
         x = x_data[i]
         y = y_data[i]
-        samples.append(Sample(y, x))
+        samples.append(Sample(y, x, 0))
 
-    filter = AlphaBetaGammaFilter(samples[0], alpha=0.5, beta=0.1, velocity=1.0) # results change with beta
+    filter = AlphaBetaGammaFilter(samples[0],
+                                  alpha=alpha,
+                                  beta=beta,
+                                  gamma=gamma,
+                                  velocity=vel,
+                                  acceleration=acc) # results change with beta
     for sample in samples[1:]:
         filter.add_sample(sample)
 
     y_pred = filter.predictions
     y_pred.insert(0, y_data[0])
-    plot_smooth(x_data, y_data, y_pred, 'AlphaBeta Filter')
 
-    # alpha-beta-gamma
-
+    print('Alpha-Beta-Gamma Filter')
+    print(f'alpha={alpha}, beta={beta}, gamma={gamma}')
+    print(f'velocity={vel}, acceleration={acc}')
+    print()
+    comp_df = pd.DataFrame({"y_real": y_data, "y_pred": y_pred}, index=x_data)
+    print(comp_df.head())
+    print(comp_df.tail())
+    plot_smooth(x_data, y_data, y_pred, 'Alpha-Beta-Gamma Filter')
 
     return
 
@@ -454,9 +463,13 @@ if __name__ == '__main__':
     if not os.path.isfile(CLEANED_PATH):
         clean_df(DATA_PATH)
 
-    #output_stats_graph(filename=CLEANED_NONA_PATH)
-    #print(PRINT_SEP)
-    #check_stationarity(CLEANED_PATH, True)
-    #fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
-    #analyze_LSM(CLEANED_NONA_PATH)
-    smoothing(CLEANED_NONA_PATH)
+    # check_stationarity(CLEANED_PATH, True)
+    # fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
+    # output_stats_graph(filename=CLEANED_PATH, comment=f'Cleaned {COL_NAME} (with NA)')
+    # print(PRINT_SEP)
+    # check_stationarity(CLEANED_PATH, False)
+    # output_stats_graph(filename=CLEANED_NONA_PATH, comment=f'Cleaned {COL_NAME} (without NA)')
+    # print(PRINT_SEP)
+    # analyze_LSM(CLEANED_NONA_PATH)
+    # print(PRINT_SEP)
+    #smoothing(CLEANED_NONA_PATH, 0.5, 0.1, 1.0)
