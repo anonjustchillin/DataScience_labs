@@ -342,7 +342,7 @@ class Sample:
 
 
 class AlphaBetaGammaFilter:
-    def __init__(self, init_sample, alpha=1.0, beta=0.1, gamma=0.0, velocity=1.0, acceleration=0):
+    def __init__(self, init_sample, alpha=1.0, beta=0.1, gamma=0.0, velocity=1.0, acceleration=0.0):
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -392,7 +392,7 @@ class AlphaBetaGammaFilter:
         return prediction, prediction_v
 
 
-def smoothing(filename, alpha, beta, vel, gamma=0, acc=0):
+def smoothing(filename, alpha, beta, vel, gamma=0.0, acc=0.0):
     df = pd.read_csv(filename, encoding='utf-8', index_col=0)
     x_data = np.arange(0, len(df), 1)
     y_data = df[COL_NAME].to_list()
@@ -463,13 +463,15 @@ if __name__ == '__main__':
     if not os.path.isfile(CLEANED_PATH):
         clean_df(DATA_PATH)
 
-    # check_stationarity(CLEANED_PATH, True)
+    check_stationarity(CLEANED_PATH, True)
     # fill_empty_cells(CLEANED_PATH, output_filename=CLEANED_NONA_PATH)
-    # output_stats_graph(filename=CLEANED_PATH, comment=f'Cleaned {COL_NAME} (with NA)')
-    # print(PRINT_SEP)
-    # check_stationarity(CLEANED_PATH, False)
-    # output_stats_graph(filename=CLEANED_NONA_PATH, comment=f'Cleaned {COL_NAME} (without NA)')
-    # print(PRINT_SEP)
-    # analyze_LSM(CLEANED_NONA_PATH)
-    # print(PRINT_SEP)
-    #smoothing(CLEANED_NONA_PATH, 0.5, 0.1, 1.0)
+    output_stats_graph(filename=CLEANED_PATH, comment=f'Cleaned {COL_NAME} (with NA)')
+    print(PRINT_SEP)
+    check_stationarity(CLEANED_NONA_PATH, False)
+    output_stats_graph(filename=CLEANED_NONA_PATH, comment=f'Cleaned {COL_NAME} (without NA)')
+    print(PRINT_SEP)
+    analyze_LSM(CLEANED_NONA_PATH)
+    print(PRINT_SEP)
+    smoothing(CLEANED_NONA_PATH, 0.5, 0.9, 1.0)
+    print(PRINT_SEP)
+    smoothing(CLEANED_NONA_PATH, 0.5, 0.1, 1.0, 0.2, 1.0)
