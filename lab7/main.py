@@ -1,13 +1,11 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import torch.optim as optim
 from darts import TimeSeries
 from darts.models import ARIMA, RandomForestModel, BlockRNNModel
 from darts.utils.statistics import check_seasonality, plot_acf, plot_pacf, plot_hist
 from darts.metrics import mape, rmse, r2_score
 from sklearn.preprocessing import StandardScaler
-import statsmodels
 import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
@@ -15,6 +13,17 @@ warnings.filterwarnings('ignore')
 INPUT_DATA_FILE = 'Sales_dataset.xlsx'
 
 def extrapolate(df, col='SALES', predict_to=100, normalize=True):
+    def evaluate(data, pred, model_name):
+        mape_res = mape(data, pred)
+        rmse_res = rmse(data, pred)
+        r2_res = r2_score(data, pred)
+
+        print(f"Оцінка моделі: {model_name}")
+        print(f"MAPE (Середня абсолютна відсоткова похибка): {mape_res:.2f}%")
+        print(f"RMSE (Коренева середньоквадратична похибка): {rmse_res:.2f}")
+        print(f"R^2 (Коефіцієнт детермінації): {r2_res:.4f}\n")
+        return
+
     def plot_pred(data, pred, name, days_from_start_pred=None):
         data.plot(label='Original', color='blue')
         pred.plot(label='Prediction', color='red')
@@ -28,45 +37,70 @@ def extrapolate(df, col='SALES', predict_to=100, normalize=True):
         plt.show()
 
     def arima_method(data):
+        train, val = data[:-100], data[-100:]
+
         model = ARIMA()
-        model.fit(data)
-        pred = model.predict(predict_to)
+        model.fit(train)
+
+        pred_val = model.predict(len(val), series=train)
+        plot_pred(data, pred_val, 'ARIMA', 360)
+        plot_pred(data, pred_val, 'ARIMA (validation)')
+
+        pred = model.predict(len(val)+predict_to, series=train)
         plot_pred(data, pred, 'ARIMA', 30)
         plot_pred(data, pred, 'ARIMA', 360)
         plot_pred(data, pred, 'ARIMA')
-        return
+
+        evaluate(val, pred_val, 'ARIMA')
+        return pred
 
     def random_forest_method(data, period):
+        train, val = data[:-100], data[-100:]
+
         model = RandomForestModel(
-            lags=period,
-            n_estimators=100,
+            lags=50,
+            n_estimators=period,
             max_depth=10,
             random_state=42
         )
-        model.fit(series=data)
-        pred = model.predict(
-            n=predict_to,
-            series=data
-        )
+        model.fit(series=train)
+
+        pred_val = model.predict(len(val), series=train)
+        plot_pred(data, pred_val, 'RANDOM FOREST', 360)
+        plot_pred(data, pred_val, 'RANDOM FOREST (validation)')
+
+        pred = model.predict(len(val) + predict_to, series=train)
         plot_pred(data, pred, 'RANDOM FOREST', 30)
         plot_pred(data, pred, 'RANDOM FOREST', 360)
         plot_pred(data, pred, 'RANDOM FOREST')
-        return
+
+        evaluate(val, pred_val, 'RANDOM FOREST')
+        return pred
 
     def lstm_method(data, period):
+        train, val = data[:-100], data[-100:]
+
         model = BlockRNNModel(
             model="RNN",
             input_chunk_length=period,
+            output_chunk_length=predict_to,
             dropout=0.2,
-            n_epochs=20,
+            n_epochs=50,
             random_state=42
         )
-        model.fit(series=data)
-        pred = model.predict(predict_to)
+        model.fit(series=train)
+
+        pred_val = model.predict(len(val), series=train)
+        plot_pred(data, pred_val, 'LSMT', 360)
+        plot_pred(data, pred_val, 'LSMT (validation)')
+
+        pred = model.predict(len(val) + predict_to, series=train)
         plot_pred(data, pred, 'LSMT', 30)
         plot_pred(data, pred, 'LSMT', 360)
         plot_pred(data, pred, 'LSMT')
-        return
+
+        evaluate(val, pred_val, 'LSMT')
+        return pred
 
     if normalize:
         df['SALES'] = StandardScaler().fit_transform(df[['SALES']])
@@ -101,8 +135,8 @@ def extrapolate(df, col='SALES', predict_to=100, normalize=True):
     plt.title(f"Histogram {col}")
     plt.show()
 
-    #arima_method(ts)
-    #random_forest_method(ts, period)
+    arima_method(ts)
+    random_forest_method(ts, period)
     lstm_method(ts, period)
 
     return
@@ -198,6 +232,19 @@ def show_plots(df, plots, bars):
     plot_with_2cols('SALES', 'TOTAL_PROFIT_LOSS')
     return
 
+def stats(col):
+    mean_col = round(np.mean(col), 4)
+    med_col = round(np.median(col), 4)
+    var_col = round(np.var(col), 4)
+    std_col = round(np.std(col), 4)
+
+    print(f'Length = {len(col)}')
+    print(f'Mean = {mean_col}')
+    print(f'Median = {med_col}')
+    print(f'Variance = {var_col}')
+    print(f'Standard deviation = {std_col}')
+    return
+
 if __name__ == '__main__':
     print('Opening file...')
     df = pd.read_excel(INPUT_DATA_FILE)
@@ -252,21 +299,14 @@ if __name__ == '__main__':
     df_short['ORDER_DATE'] = pd.to_datetime(df_short['ORDER_DATE'])
     df_short.set_index('ORDER_DATE', inplace=True)
     df_short = df_short.resample('D').sum()
-    #df_short = df_short.groupby('ORDER_DATE').sum().asfreq('D')
-    #df_short.set_index('ORDER_DATE', inplace=True)
-    #new_rows = pd.DataFrame({"ORDER_DATE": missing_dates,
-    #                         'SALES': [np.nan for i in range(len(missing_dates))],
-    #                         'TOTAL_PROFIT_LOSS': [np.nan for i in range(len(missing_dates))]
-    #                         })
-    #df_short = pd.concat([df_short, new_rows], ignore_index=True)
-    #df_short['ORDER_DATE'] = pd.to_datetime(df_short['ORDER_DATE'])
-    #df_short.sort_values(by=['ORDER_DATE'], inplace=True)
-    #print(df_short)
     print(f'Updated dataframe length: {len(df_short)}')
     df_short['SALES'].interpolate(method='time', inplace=True)
     df_short['TOTAL_PROFIT_LOSS'].interpolate(method='time', inplace=True)
     print(f'{df.isnull().sum().sum()} missing values')
     #print()
+    print(df_short.describe())
+    stats(df['SALES'])
+
     plt.figure(figsize=(16, 5))
     plt.plot(df_short.index, df_short['SALES'])
     plt.title('SALES')
