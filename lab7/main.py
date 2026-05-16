@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from darts import TimeSeries
 from darts.models import ARIMA, RandomForestModel, BlockRNNModel
-from darts.utils.statistics import check_seasonality, plot_acf, plot_pacf, plot_hist
+from darts.utils.statistics import check_seasonality, stationarity_test_adf, plot_acf, plot_pacf, plot_hist
 from darts.metrics import mape, rmse, r2_score
 from sklearn.preprocessing import StandardScaler
 import numpy as np
@@ -121,6 +121,18 @@ def extrapolate(df, col='SALES', predict_to=100, normalize=True):
     is_seasonal, period = check_seasonality(ts)
     print(f'Is {col} seasonal: {is_seasonal}')
     print(f'Periodicity: {period}')
+    print()
+
+    result = stationarity_test_adf(ts)
+    print('ADF Statistic: %f' % result[0])
+    print('p-value: %f' % result[1])
+    print('Critical Values:')
+    for key, value in result[4].items():
+        print('\t%s: %.3f' % (key, value))
+    if (result[1] <= 0.05) & (result[4]['5%'] > result[0]):
+        print("Stationary")
+    else:
+        print("Non-stationary")
     print()
 
     plot_acf(ts)
